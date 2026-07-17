@@ -1,0 +1,134 @@
+diff --git a/packages/core/src/zig/build.zig b/packages/core/src/zig/build.zig
+index 0c82ba3d..ee400e32 100644
+--- a/packages/core/src/zig/build.zig
++++ b/packages/core/src/zig/build.zig
+@@ -276,25 +276,34 @@ pub fn build(b: *std.Build) void {
+     const target_option = b.option([]const u8, "target", "Build for specific target (e.g., 'x86_64-linux-gnu.2.17').");
+     const build_all = b.option(bool, "all", "Build for all supported targets") orelse false;
+     const gpa_safe_stats = b.option(bool, "gpa-safe-stats", "Enable GPA safety checks for trustworthy allocator stats") orelse false;
++    // "static" produces libopentui.a for single-binary consumers (e.g. Solod).
++    // Default remains "dynamic" for the TypeScript/Bun FFI loader.
++    const linkage_option = b.option([]const u8, "linkage", "Library linkage: dynamic (default) or static") orelse "dynamic";
++    const linkage: std.builtin.LinkMode = blk: {
++        if (std.mem.eql(u8, linkage_option, "static")) break :blk .static;
++        if (std.mem.eql(u8, linkage_option, "dynamic")) break :blk .dynamic;
++        std.debug.print("Error: -Dlinkage must be 'dynamic' or 'static', got '{s}'\n", .{linkage_option});
++        std.process.exit(1);
++    };
+     const macos_sdk_path = resolveMacOSSDKPath(b);
+     const build_options = b.addOptions();
+     build_options.addOption(bool, "gpa_safe_stats", gpa_safe_stats);
+ 
+     if (target_option) |target_str| {
+         // Build single target
+-        buildSingleTarget(b, target_str, optimize, build_options, macos_sdk_path) catch |err| {
++        buildSingleTarget(b, target_str, optimize, build_options, macos_sdk_path, linkage) catch |err| {
+             std.debug.print("Error building target '{s}': {}\n", .{ target_str, err });
+             std.process.exit(1);
+         };
+     } else if (build_all) {
+         // Build all supported targets
+-        buildAllTargets(b, optimize, build_options, macos_sdk_path) catch |err| {
++        buildAllTargets(b, optimize, build_options, macos_sdk_path, linkage) catch |err| {
+             std.debug.print("Error building all targets: {}\n", .{err});
+             std.process.exit(1);
+         };
+     } else {
+         // Build for native target only (default)
+-        buildNativeTarget(b, optimize, build_options, macos_sdk_path) catch |err| {
++        buildNativeTarget(b, optimize, build_options, macos_sdk_path, linkage) catch |err| {
+             std.debug.print("Error building native target: {}\n", .{err});
+             std.process.exit(1);
+         };
+@@ -387,6 +396,7 @@ fn buildAllTargets(
+     optimize: std.builtin.OptimizeMode,
+     build_options: *std.Build.Step.Options,
+     macos_sdk_path: ?[]const u8,
++    linkage: std.builtin.LinkMode,
+ ) !void {
+     for (SUPPORTED_TARGETS) |supported_target| {
+         try buildTarget(
+@@ -397,6 +407,7 @@ fn buildAllTargets(
+             optimize,
+             build_options,
+             macos_sdk_path,
++            linkage,
+         );
+     }
+ }
+@@ -406,6 +417,7 @@ fn buildNativeTarget(
+     optimize: std.builtin.OptimizeMode,
+     build_options: *std.Build.Step.Options,
+     macos_sdk_path: ?[]const u8,
++    linkage: std.builtin.LinkMode,
+ ) !void {
+     // Find the matching supported target for the native platform
+     const native_arch = @tagName(builtin.cpu.arch);
+@@ -424,6 +436,7 @@ fn buildNativeTarget(
+                 optimize,
+                 build_options,
+                 macos_sdk_path,
++                linkage,
+             );
+             return;
+         }
+@@ -439,6 +452,7 @@ fn buildSingleTarget(
+     optimize: std.builtin.OptimizeMode,
+     build_options: *std.Build.Step.Options,
+     macos_sdk_path: ?[]const u8,
++    linkage: std.builtin.LinkMode,
+ ) !void {
+     // Check if it matches a known target, use its output_name
+     for (SUPPORTED_TARGETS) |supported_target| {
+@@ -451,13 +465,14 @@ fn buildSingleTarget(
+                 optimize,
+                 build_options,
+                 macos_sdk_path,
++                linkage,
+             );
+             return;
+         }
+     }
+     // Custom target - use target string as output name
+     const description = try std.fmt.allocPrint(b.allocator, "Custom target: {s}", .{target_str});
+-    try buildTarget(b, target_str, target_str, description, optimize, build_options, macos_sdk_path);
++    try buildTarget(b, target_str, target_str, description, optimize, build_options, macos_sdk_path, linkage);
+ }
+ 
+ fn buildTarget(
+@@ -468,6 +483,7 @@ fn buildTarget(
+     optimize: std.builtin.OptimizeMode,
+     build_options: *std.Build.Step.Options,
+     macos_sdk_path: ?[]const u8,
++    linkage: std.builtin.LinkMode,
+ ) !void {
+     const target_query = try std.Target.Query.parse(.{ .arch_os_abi = zig_target });
+     const target = b.resolveTargetQuery(target_query);
+@@ -488,22 +504,23 @@ fn buildTarget(
+     const lib = b.addLibrary(.{
+         .name = LIB_NAME,
+         .root_module = module,
+-        .linkage = .dynamic,
++        .linkage = linkage,
+     });
+ 
+     addNativeAudioDependencies(b, lib, target, macos_sdk_path);
+     addYogaDependencies(b, lib);
+ 
++    const linkage_suffix = if (linkage == .static) "-static" else "";
+     const install_dir = b.addInstallArtifact(lib, .{
+         .dest_dir = .{
+             .override = .{
+-                .custom = try std.fmt.allocPrint(b.allocator, "../lib/{s}", .{output_name}),
++                .custom = try std.fmt.allocPrint(b.allocator, "../lib/{s}{s}", .{ output_name, linkage_suffix }),
+             },
+         },
+     });
+ 
+-    const build_step_name = try std.fmt.allocPrint(b.allocator, "build-{s}", .{output_name});
+-    const build_step = b.step(build_step_name, try std.fmt.allocPrint(b.allocator, "Build for {s}", .{description}));
++    const build_step_name = try std.fmt.allocPrint(b.allocator, "build-{s}{s}", .{ output_name, linkage_suffix });
++    const build_step = b.step(build_step_name, try std.fmt.allocPrint(b.allocator, "Build for {s} ({s})", .{ description, @tagName(linkage) }));
+     build_step.dependOn(&install_dir.step);
+ 
+     b.getInstallStep().dependOn(&install_dir.step);

@@ -1,0 +1,9 @@
+# optional local reference checkouts
+solod
+opentui
+
+# go run ./cmd/opentui-static working tree
+_build/
+
+# build artifacts
+examples/smoke-static/smoke
