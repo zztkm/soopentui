@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/zztkm/solod-vs-go/soopentui"
+	"github.com/zztkm/soopentui"
 	"solod.dev/so/time"
 )
 

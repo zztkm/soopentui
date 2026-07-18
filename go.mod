@@ -1,3 +1,3 @@
-module github.com/zztkm/solod-vs-go
+module github.com/zztkm/soopentui
 
 go 1.26.3

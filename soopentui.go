@@ -1,4 +1,4 @@
-// Package soopentui is a thin Solod binding for the OpenTUI native C ABI.
+// Package soopentui is a third-party Solod (So) binding for the OpenTUI native C ABI.
 package soopentui
 
 //so:include "opentui.h"

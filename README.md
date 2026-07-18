@@ -69,7 +69,7 @@ go run ./cmd/hello-tui
 |------|------|
 | `cmd/hello-tui/` | `go run` 用ビルドオーケストレータ |
 | `include/opentui.h` | MVP 用 C ABI 宣言 |
-| `soopentui/` | So からの薄いバインディング |
+| `soopentui.go` | So 向け第三者バインディング（`github.com/zztkm/soopentui`） |
 | `examples/hello-tui/` | サンプルアプリ |
 
 ビルドは `so translate` → `zig cc` で静的リンクします（単一バイナリ、`libopentui.dylib` 依存なし）。
@@ -101,7 +101,7 @@ cmd/opentui-static/     # OpenTUI: clone → patch → build
 cmd/hello-tui/          # hello-tui: translate → link
 patches/                # OpenTUI 向けパッチ
 include/opentui.h       # MVP C ヘッダ
-soopentui/              # So バインディング
+soopentui.go            # So 向け OpenTUI バインディング（モジュールルート）
 examples/hello-tui/     # 最小 TUI
 examples/smoke-static/  # C 静的リンクスモーク
 _build/                 # 作業ディレクトリ（gitignore）
