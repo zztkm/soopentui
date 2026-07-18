@@ -1,7 +1,7 @@
 # soopentui
 
-Solod (So) 向けの [OpenTUI](https://github.com/anomalyco/opentui) 第三者バインディングです。  
-ネイティブ core（`libopentui.a`）を静的リンクして使う前提の薄い C ABI ラップです。
+Solod (So) 向けの [OpenTUI](https://github.com/anomalyco/opentui) バインディングです。
+ネイティブ core（`libopentui.a`）を静的リンクして使う前提の薄い C ABI ラッパーです、現在開発中です。
 
 ```bash
 go get github.com/zztkm/soopentui@latest
@@ -16,7 +16,7 @@ go get github.com/zztkm/soopentui@latest
 | Go 1.22+ | モジュール取得 / `cmd/*` の実行 |
 | [Zig 0.15.2](https://ziglang.org/download/) | OpenTUI ネイティブ core とアプリのリンク |
 | Git | OpenTUI の clone とパッチ適用 |
-| [Solod (`so`)](https://github.com/solod-dev/solod) | So のトランスパイル |
+| [Solod (`so`)](https://github.com/solod-dev/solod) | So のトランスパイル (tip 版を利用します) |
 | Xcode Command Line Tools（macOS） | SDK / システム framework |
 
 ```bash
@@ -78,17 +78,6 @@ replace github.com/zztkm/soopentui => ../..
 
 公開済みバージョンだけを使う場合は replace を外し、`require` でタグを指定します。
 
-## 構成
-
-| パス | 役割 |
-|------|------|
-| `soopentui.go` | So バインディング（モジュールルート） |
-| `include/opentui.h` | MVP 用 C ABI 宣言 |
-| `cmd/opentui-static/` | OpenTUI clone → patch → `libopentui.a` |
-| `cmd/hello-tui/` | サンプルの translate → link |
-| `patches/` | 静的リンク用パッチ |
-| `examples/hello-tui/` | 最小 TUI サンプル |
-
 ## 既知の注意（macOS + Zig 0.15.2）
 
 新しい Xcode / macOS SDK では Zig 0.15.2 の build runner が失敗することがあります。  
@@ -104,7 +93,8 @@ OPENTUI_KEEP_DEVELOPER_DIR=1 go run ./cmd/opentui-static
 
 ## ライセンス
 
-- **soopentui**: MIT（[LICENSE](LICENSE)）
-- **第三者コンポーネント**（OpenTUI）: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+- soopentui: MIT（[LICENSE](LICENSE)）
+- THIRD_PARTY_NOTICES: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
 
 `libopentui.a` をリンクしたバイナリを配布する場合は、OpenTUI の MIT 表記に従ってください。OpenTUI 配下の依存は上流を参照してください。
+
