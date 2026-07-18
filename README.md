@@ -68,6 +68,22 @@ go run ./cmd/hello-tui
 | `-run` | ビルド後に実行 |
 | `-skip-lib` | `libopentui.a` が無いときに自動ビルドしない |
 
+## 公開 API（描画・端末制御）
+
+薄い C ABI ラッパーです。キー／マウス入力のデコードやイベントループは含みません（stdin はアプリ側で読んでください）。`EnableMouse` は端末のマウス報告を有効化するだけです。
+
+| 関数 | 役割 |
+|------|------|
+| `CreateRenderer` / `Destroy` | レンダラ生成・破棄 |
+| `SetupTerminal` / `RestoreTerminal` / `ClearTerminal` | 端末モード |
+| `SetClearOnShutdown` / `SetBackgroundColor` / `SetTerminalTitle` | 終了時クリア・背景・タイトル |
+| `Resize` | リサイズ |
+| `SetCursorPosition` / `SetCursorColor` / `SetCursorStyle` | カーソル |
+| `EnableMouse` / `DisableMouse` | マウス報告の ON/OFF |
+| `NextBuffer` / `CurrentBuffer` / `BufferWidth` / `BufferHeight` | バッファ |
+| `Clear` / `FillRect` / `DrawText` / `DrawTextAttr` | 描画 |
+| `Render` | 表示 |
+
 ## ローカル開発
 
 このリポジトリを直接いじるときは、例アプリで一時的に replace を足します:
