@@ -1,4 +1,4 @@
-module github.com/zztkm/solod-vs-go/examples/hello-tui
+module github.com/zztkm/soopentui/examples/hello-tui
 
 go 1.26.3
 

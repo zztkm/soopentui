@@ -1,108 +1,107 @@
-# solod-vs-go
+# soopentui
 
-Solod (So) と Go、および OpenTUI 連携を試すための作業用リポジトリです。
+Solod (So) 向けの [OpenTUI](https://github.com/anomalyco/opentui) 第三者バインディングです。  
+ネイティブ core（`libopentui.a`）を静的リンクして使う前提の薄い C ABI ラップです。
+
+```bash
+go get github.com/zztkm/soopentui@latest
+```
+
+`go get` で届くのは So ソース・C ヘッダ・ビルド用ツールです。**リンク用の `libopentui.a` は同梱しません**（OS/arch 依存のため）。別途ビルドしてください。
 
 ## 前提
 
 | ツール | 用途 |
 |--------|------|
-| Go 1.22+ | `go run` で OpenTUI の clone / パッチ / ビルド |
-| [Zig 0.15.2](https://ziglang.org/download/) | OpenTUI ネイティブ core とアプリのリンク（`.zig-version` と一致） |
+| Go 1.22+ | モジュール取得 / `cmd/*` の実行 |
+| [Zig 0.15.2](https://ziglang.org/download/) | OpenTUI ネイティブ core とアプリのリンク |
 | Git | OpenTUI の clone とパッチ適用 |
-| [Solod (`so`)](https://github.com/solod-dev/solod) | So アプリのトランスパイル |
+| [Solod (`so`)](https://github.com/solod-dev/solod) | So のトランスパイル |
 | Xcode Command Line Tools（macOS） | SDK / システム framework |
 
 ```bash
-# so CLI（tip / main）
 go install solod.dev/cmd/so@main
+go get solod.dev@main   # 標準ライブラリも tip 推奨（@latest は古いことがある）
 ```
 
-So 標準ライブラリも tip を使う（`@latest` は古いタグのままのことがある）:
+## 利用の流れ
+
+### 1. モジュールを取得
 
 ```bash
-go get solod.dev@main
+go get github.com/zztkm/soopentui@v0.1.0
 ```
 
-OpenTUI 本体は手動 clone 不要です（`go run` が `_build/opentui` に取得します）。
+アプリ側:
 
-## OpenTUI を静的ライブラリとしてビルドする
-
-```bash
-go run ./cmd/opentui-static
+```go
+import "github.com/zztkm/soopentui"
 ```
 
-1. 必要なら OpenTUI を `_build/opentui` に clone  
-2. `patches/opentui-static-linkage.patch` を適用  
-3. `zig build -Dlinkage=static` で `libopentui.a` を生成  
-
-| フラグ | 意味 |
-|--------|------|
-| `--force` | `_build/opentui` を消して再 clone してから patch / build |
-| `-skip-build` | clone / patch のみ |
-| `-optimize mode` | Zig 最適化（既定: `ReleaseFast`） |
-
-成果物例:
-
-`_build/opentui/packages/core/src/zig/lib/aarch64-macos-static/libopentui.a`
-
-## Hello TUI（Solod + OpenTUI）
-
-画面に文言を出して 2 秒後に終了する最小アプリです。
+### 2. 静的ライブラリをビルド
 
 ```bash
-go install solod.dev/cmd/so@main
+go run github.com/zztkm/soopentui/cmd/opentui-static@v0.1.0
+```
+
+カレントディレクトリに `_build/opentui/.../libopentui.a` ができます（モジュールキャッシュは読み取り専用のため）。
+
+### 3. トランスパイルとリンク
+
+`so translate` 後、`zig cc` で生成 C と `libopentui.a` をリンクします。C ABI ヘッダはモジュールの `include/` にあります:
+
+```bash
+SOOPENTUI_DIR="$(go list -m -f '{{.Dir}}' github.com/zztkm/soopentui)"
+# zig cc ... -I"$SOOPENTUI_DIR/include" ... path/to/libopentui.a
+```
+
+手元のクローンではサンプル一式をビルドできます:
+
+```bash
 go run ./cmd/hello-tui
 ./examples/hello-tui/hello-tui
 ```
 
-`libopentui.a` が無ければ、内部で `go run ./cmd/opentui-static` も実行します。
-
 | フラグ | 意味 |
 |--------|------|
-| `-o path` | 出力バイナリ（既定: `examples/hello-tui/hello-tui`） |
+| `-o path` | 出力バイナリ |
 | `-run` | ビルド後に実行 |
-| `-skip-lib` | 静的ライブラリが無いときに自動ビルドしない |
+| `-skip-lib` | `libopentui.a` が無いときに自動ビルドしない |
 
-構成:
+## ローカル開発
+
+このリポジトリを直接いじるときは、例アプリで一時的に replace を足します:
+
+```go
+replace github.com/zztkm/soopentui => ../..
+```
+
+公開済みバージョンだけを使う場合は replace を外し、`require` でタグを指定します。
+
+## 構成
 
 | パス | 役割 |
 |------|------|
-| `cmd/hello-tui/` | `go run` 用ビルドオーケストレータ |
+| `soopentui.go` | So バインディング（モジュールルート） |
 | `include/opentui.h` | MVP 用 C ABI 宣言 |
-| `soopentui.go` | So 向け第三者バインディング（`github.com/zztkm/soopentui`） |
-| `examples/hello-tui/` | サンプルアプリ |
-
-ビルドは `so translate` → `zig cc` で静的リンクします（単一バイナリ、`libopentui.dylib` 依存なし）。
-
-## C スモーク
-
-```bash
-go run ./cmd/opentui-static
-./examples/smoke-static/build.sh
-```
+| `cmd/opentui-static/` | OpenTUI clone → patch → `libopentui.a` |
+| `cmd/hello-tui/` | サンプルの translate → link |
+| `patches/` | 静的リンク用パッチ |
+| `examples/hello-tui/` | 最小 TUI サンプル |
 
 ## 既知の注意（macOS + Zig 0.15.2）
 
 新しい Xcode / macOS SDK では Zig 0.15.2 の build runner が失敗することがあります。  
-`go run ./cmd/opentui-static` は `DEVELOPER_DIR=/dev/null` を自動設定します。
-
-無効化:
+`cmd/opentui-static` は `DEVELOPER_DIR=/dev/null` を自動設定します。
 
 ```bash
 OPENTUI_KEEP_DEVELOPER_DIR=1 go run ./cmd/opentui-static
 ```
 
-また `so build` の `LDFLAGS` は `-o` の後に付くため、`zig cc` + framework リンクでは使えません。hello-tui は translate + 明示リンクにしています。
+`so build` の `LDFLAGS` は `-o` の後に付くため、framework リンクでは使えません。hello-tui は translate + 明示リンクです。
 
-## ディレクトリ
+起動時に端末 capability 問い合わせの応答がシェルに漏れることがあります（stdin を読んでいないため）。表示自体は問題ありません。
 
-```text
-cmd/opentui-static/     # OpenTUI: clone → patch → build
-cmd/hello-tui/          # hello-tui: translate → link
-patches/                # OpenTUI 向けパッチ
-include/opentui.h       # MVP C ヘッダ
-soopentui.go            # So 向け OpenTUI バインディング（モジュールルート）
-examples/hello-tui/     # 最小 TUI
-examples/smoke-static/  # C 静的リンクスモーク
-_build/                 # 作業ディレクトリ（gitignore）
-```
+## ライセンス
+
+MIT（[LICENSE](LICENSE)）。OpenTUI 本体はその上流のライセンスに従います。

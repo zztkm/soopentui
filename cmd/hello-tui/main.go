@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 )
 
 const (
+	modulePath = "github.com/zztkm/soopentui"
 	exampleRel = "examples/hello-tui"
 	includeRel = "include"
 	patchRel   = "patches/opentui-static-linkage.patch"
@@ -27,30 +29,38 @@ func main() {
 }
 
 func run() error {
-	outFlag := flag.String("o", "", "output binary (default: examples/hello-tui/hello-tui)")
+	outFlag := flag.String("o", "", "output binary (default: examples/hello-tui/hello-tui or ./hello-tui)")
 	skipLib := flag.Bool("skip-lib", false, "do not build libopentui.a if missing")
 	runApp := flag.Bool("run", false, "run the binary after a successful build")
 	flag.Parse()
 
-	root, err := findRepoRoot()
+	modRoot, err := findModuleRoot()
+	if err != nil {
+		return err
+	}
+	workRoot, err := workRoot(modRoot)
 	if err != nil {
 		return err
 	}
 
-	exampleDir := filepath.Join(root, exampleRel)
+	exampleDir := filepath.Join(modRoot, exampleRel)
 	if _, err := os.Stat(filepath.Join(exampleDir, "main.go")); err != nil {
 		return fmt.Errorf("example not found: %s", exampleDir)
 	}
 
 	out := *outFlag
 	if out == "" {
-		out = filepath.Join(exampleDir, "hello-tui")
+		if inModuleCache(modRoot) {
+			out = filepath.Join(workRoot, "hello-tui")
+		} else {
+			out = filepath.Join(exampleDir, "hello-tui")
+		}
 	}
 	if !filepath.IsAbs(out) {
-		out = filepath.Join(root, out)
+		out = filepath.Join(workRoot, out)
 	}
 
-	libPath, err := opentuiStaticLibPath(root)
+	libPath, err := opentuiStaticLibPath(workRoot)
 	if err != nil {
 		return err
 	}
@@ -59,7 +69,7 @@ func run() error {
 			return fmt.Errorf("OpenTUI static library not found: %s", libPath)
 		}
 		fmt.Println("building static OpenTUI...")
-		if err := runCmd(root, "go", "run", "./cmd/opentui-static"); err != nil {
+		if err := runCmd(workRoot, "go", "run", filepath.Join(modRoot, "cmd", "opentui-static")); err != nil {
 			return err
 		}
 		if !fileExists(libPath) {
@@ -72,6 +82,11 @@ func run() error {
 	}
 	if _, err := exec.LookPath("zig"); err != nil {
 		return errors.New("zig not found in PATH")
+	}
+
+	includeDir, err := soopentuiIncludeDir(exampleDir, modRoot)
+	if err != nil {
+		return err
 	}
 
 	tmpDir, err := os.MkdirTemp("", "hello-tui-build-*")
@@ -94,7 +109,7 @@ func run() error {
 	}
 
 	fmt.Printf("linking %d C files + libopentui.a -> %s\n", len(cFiles), out)
-	if err := link(root, tmpDir, libPath, cFiles, out); err != nil {
+	if err := link(tmpDir, includeDir, libPath, cFiles, out); err != nil {
 		return err
 	}
 
@@ -107,7 +122,7 @@ func run() error {
 	if *runApp {
 		fmt.Println("running...")
 		cmd := exec.Command(out)
-		cmd.Dir = exampleDir
+		cmd.Dir = workRoot
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -116,8 +131,32 @@ func run() error {
 	return nil
 }
 
-func link(root, tmpDir, libPath string, cFiles []string, out string) error {
-	includeDir := filepath.Join(root, includeRel)
+// soopentuiIncludeDir resolves include/ via `go list -m` (works with replace and module cache).
+func soopentuiIncludeDir(exampleDir, fallbackModRoot string) (string, error) {
+	cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", modulePath)
+	cmd.Dir = exampleDir
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		includeDir := filepath.Join(fallbackModRoot, includeRel)
+		if fileExists(filepath.Join(includeDir, "opentui.h")) {
+			return includeDir, nil
+		}
+		return "", fmt.Errorf("go list -m %s: %w\n%s", modulePath, err, strings.TrimSpace(stderr.String()))
+	}
+	dir := strings.TrimSpace(stdout.String())
+	if dir == "" {
+		return "", fmt.Errorf("go list -m %s: empty Dir", modulePath)
+	}
+	includeDir := filepath.Join(dir, includeRel)
+	if !fileExists(filepath.Join(includeDir, "opentui.h")) {
+		return "", fmt.Errorf("opentui.h not found in %s", includeDir)
+	}
+	return includeDir, nil
+}
+
+func link(tmpDir, includeDir, libPath string, cFiles []string, out string) error {
 	args := []string{
 		"cc", "-O2",
 		"-I" + tmpDir,
@@ -163,13 +202,13 @@ func link(root, tmpDir, libPath string, cFiles []string, out string) error {
 	return nil
 }
 
-func opentuiStaticLibPath(root string) (string, error) {
+func opentuiStaticLibPath(workRoot string) (string, error) {
 	arch, osName, err := opentuiPlatform()
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(
-		root, "_build", "opentui", "packages", "core", "src", "zig", "lib",
+		workRoot, "_build", "opentui", "packages", "core", "src", "zig", "lib",
 		arch+"-"+osName+"-static", "libopentui.a",
 	), nil
 }
@@ -212,22 +251,73 @@ func findCFiles(dir string) ([]string, error) {
 	return files, nil
 }
 
-func findRepoRoot() (string, error) {
+func findModuleRoot() (string, error) {
+	if root, err := moduleRootFromCaller(); err == nil {
+		return root, nil
+	}
 	wd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
 	dir := wd
 	for {
-		if fileExists(filepath.Join(dir, "go.mod")) && fileExists(filepath.Join(dir, patchRel)) {
+		if isModuleRoot(dir) {
 			return dir, nil
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", errors.New("repository root not found (run from solod-vs-go or a subdirectory)")
+			return "", errors.New("soopentui module root not found (go.mod + patches/)")
 		}
 		dir = parent
 	}
+}
+
+func moduleRootFromCaller() (string, error) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", errors.New("runtime.Caller failed")
+	}
+	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+	if !isModuleRoot(root) {
+		return "", fmt.Errorf("not a module root: %s", root)
+	}
+	return root, nil
+}
+
+func isModuleRoot(dir string) bool {
+	return fileExists(filepath.Join(dir, "go.mod")) && fileExists(filepath.Join(dir, patchRel))
+}
+
+func workRoot(modRoot string) (string, error) {
+	if inModuleCache(modRoot) {
+		return os.Getwd()
+	}
+	return modRoot, nil
+}
+
+func inModuleCache(path string) bool {
+	cache := os.Getenv("GOMODCACHE")
+	if cache == "" {
+		gopath := os.Getenv("GOPATH")
+		if gopath == "" {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return false
+			}
+			gopath = filepath.Join(home, "go")
+		}
+		cache = filepath.Join(filepath.SplitList(gopath)[0], "pkg", "mod")
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	cacheAbs, err := filepath.Abs(cache)
+	if err != nil {
+		return false
+	}
+	sep := string(os.PathSeparator)
+	return abs == cacheAbs || strings.HasPrefix(abs, cacheAbs+sep)
 }
 
 func macosSDK() (string, error) {

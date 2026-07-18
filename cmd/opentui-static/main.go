@@ -35,21 +35,25 @@ func run() error {
 	optimize := flag.String("optimize", "ReleaseFast", "Zig optimize mode")
 	flag.Parse()
 
-	root, err := findRepoRoot()
+	modRoot, err := findModuleRoot()
+	if err != nil {
+		return err
+	}
+	workRoot, err := workRoot(modRoot)
 	if err != nil {
 		return err
 	}
 
 	opentuiDir := *opentuiFlag
 	if !filepath.IsAbs(opentuiDir) {
-		opentuiDir = filepath.Join(root, opentuiDir)
+		opentuiDir = filepath.Join(workRoot, opentuiDir)
 	}
 	opentuiDir, err = filepath.Abs(opentuiDir)
 	if err != nil {
 		return err
 	}
 
-	buildDir := filepath.Join(root, buildDirRel)
+	buildDir := filepath.Join(workRoot, buildDirRel)
 	if err := os.MkdirAll(buildDir, 0o755); err != nil {
 		return fmt.Errorf("create %s: %w", buildDir, err)
 	}
@@ -64,7 +68,7 @@ func run() error {
 		return fmt.Errorf("OpenTUI zig tree not found at %s", zigDir)
 	}
 
-	patchPath := filepath.Join(root, patchRel)
+	patchPath := filepath.Join(modRoot, patchRel)
 	if _, err := os.Stat(patchPath); err != nil {
 		return fmt.Errorf("patch not found: %s", patchPath)
 	}
@@ -135,22 +139,77 @@ func ensureOpenTUI(opentuiDir string, force bool) error {
 	return nil
 }
 
-func findRepoRoot() (string, error) {
+// findModuleRoot locates the soopentui module (go.mod + patches/), preferring
+// the source tree that contains this command so `go run github.com/zztkm/soopentui/cmd/...` works.
+func findModuleRoot() (string, error) {
+	if root, err := moduleRootFromCaller(); err == nil {
+		return root, nil
+	}
 	wd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
 	dir := wd
 	for {
-		if fileExists(filepath.Join(dir, "go.mod")) && fileExists(filepath.Join(dir, patchRel)) {
+		if isModuleRoot(dir) {
 			return dir, nil
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", errors.New("repository root not found (run from solod-vs-go or a subdirectory)")
+			return "", errors.New("soopentui module root not found (go.mod + patches/)")
 		}
 		dir = parent
 	}
+}
+
+func moduleRootFromCaller() (string, error) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", errors.New("runtime.Caller failed")
+	}
+	// cmd/opentui-static/main.go -> module root
+	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+	if !isModuleRoot(root) {
+		return "", fmt.Errorf("not a module root: %s", root)
+	}
+	return root, nil
+}
+
+func isModuleRoot(dir string) bool {
+	return fileExists(filepath.Join(dir, "go.mod")) && fileExists(filepath.Join(dir, patchRel))
+}
+
+// workRoot is where _build/ is written. Module cache is often read-only, so use cwd then.
+func workRoot(modRoot string) (string, error) {
+	if inModuleCache(modRoot) {
+		return os.Getwd()
+	}
+	return modRoot, nil
+}
+
+func inModuleCache(path string) bool {
+	cache := os.Getenv("GOMODCACHE")
+	if cache == "" {
+		gopath := os.Getenv("GOPATH")
+		if gopath == "" {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return false
+			}
+			gopath = filepath.Join(home, "go")
+		}
+		cache = filepath.Join(filepath.SplitList(gopath)[0], "pkg", "mod")
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	cacheAbs, err := filepath.Abs(cache)
+	if err != nil {
+		return false
+	}
+	sep := string(os.PathSeparator)
+	return abs == cacheAbs || strings.HasPrefix(abs, cacheAbs+sep)
 }
 
 func applyPatch(opentuiDir, patchPath string) error {
