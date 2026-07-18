@@ -105,6 +105,6 @@ OPENTUI_KEEP_DEVELOPER_DIR=1 go run ./cmd/opentui-static
 ## ライセンス
 
 - **soopentui**: MIT（[LICENSE](LICENSE)）
-- **第三者コンポーネント**（静的リンク時の OpenTUI / Yoga / uucode / miniaudio など）: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+- **第三者コンポーネント**（OpenTUI）: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
 
-`libopentui.a` をリンクしたバイナリを配布する場合は、同ファイルの MIT 等の表記要件に従ってください。
+`libopentui.a` をリンクしたバイナリを配布する場合は、OpenTUI の MIT 表記に従ってください。OpenTUI 配下の依存は上流を参照してください。
