@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build OpenTUI + example
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Install Solod (so)
+        run: |
+          go install solod.dev/cmd/so@main
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          so version
+
+      - name: Build static OpenTUI (libopentui.a)
+        run: go run ./cmd/opentui-static
+
+      - name: Build hello-tui example
+        run: go run ./cmd/hello-tui
+
+      - name: Verify artifacts
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64) arch=x86_64 ;;
+            aarch64|arm64) arch=aarch64 ;;
+            *) echo "unsupported arch: $(uname -m)" >&2; exit 1 ;;
+          esac
+          lib="_build/opentui/packages/core/src/zig/lib/${arch}-linux-static/libopentui.a"
+          test -f "$lib"
+          test -f examples/hello-tui/hello-tui
+          ls -lh "$lib" examples/hello-tui/hello-tui
