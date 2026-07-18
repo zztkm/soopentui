@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Wrapper so Solod's CC= can invoke `zig cc` (exec.Command needs one argv0).
+set -euo pipefail
+exec zig cc "$@"

@@ -7,3 +7,4 @@ _build/
 
 # build artifacts
 examples/smoke-static/smoke
+examples/hello-tui/hello-tui

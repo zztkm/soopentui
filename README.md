@@ -6,108 +6,103 @@ Solod (So) と Go、および OpenTUI 連携を試すための作業用リポジ
 
 | ツール | 用途 |
 |--------|------|
-| Go 1.22+ | `go run` で clone / パッチ / ビルド |
-| [Zig 0.15.2](https://ziglang.org/download/) | OpenTUI ネイティブ core のビルド（clone した OpenTUI の `.zig-version` と一致させる） |
+| Go 1.22+ | `go run` で OpenTUI の clone / パッチ / ビルド |
+| [Zig 0.15.2](https://ziglang.org/download/) | OpenTUI ネイティブ core とアプリのリンク（`.zig-version` と一致） |
 | Git | OpenTUI の clone とパッチ適用 |
+| [Solod (`so`)](https://github.com/solod-dev/solod) | So アプリのトランスパイル |
 | Xcode Command Line Tools（macOS） | SDK / システム framework |
 
-OpenTUI の取得・ビルドはすべて `_build/` 以下で行います。手動 clone は不要です。
+```bash
+# so CLI（tip / main）
+go install solod.dev/cmd/so@main
+```
+
+So 標準ライブラリも tip を使う（`@latest` は古いタグのままのことがある）:
+
+```bash
+go get solod.dev@main
+```
+
+OpenTUI 本体は手動 clone 不要です（`go run` が `_build/opentui` に取得します）。
 
 ## OpenTUI を静的ライブラリとしてビルドする
-
-OpenTUI 上流は動的ライブラリ（`dlopen` 用）前提です。  
-このリポジトリでは **静的リンク用の `-Dlinkage=static`** をパッチで足し、`libopentui.a` をビルドします。
-
-リポジトリルートで:
 
 ```bash
 go run ./cmd/opentui-static
 ```
 
-これが行うこと:
-
-1. 必要なら `https://github.com/anomalyco/opentui.git` を `_build/opentui` に clone
-2. `patches/opentui-static-linkage.patch` を適用（未適用なら）
-3. `zig build -Dlinkage=static -Doptimize=ReleaseFast` を実行
-4. 成果物パスを表示
-
-成功時の出力例:
-
-```text
-clone: https://github.com/anomalyco/opentui.git -> .../_build/opentui
-patch: applied opentui-static-linkage.patch
-...
-OK: static OpenTUI library ready (13.0M)
-.../_build/opentui/packages/core/src/zig/lib/aarch64-macos-static/libopentui.a
-```
-
-### オプション
-
-```bash
-go run ./cmd/opentui-static -h
-```
+1. 必要なら OpenTUI を `_build/opentui` に clone  
+2. `patches/opentui-static-linkage.patch` を適用  
+3. `zig build -Dlinkage=static` で `libopentui.a` を生成  
 
 | フラグ | 意味 |
 |--------|------|
-| `--force` / `-force` | `_build/opentui` を削除して再 clone してから patch / build |
-| `-opentui path` | OpenTUI の場所（既定: `_build/opentui`） |
-| `-skip-patch` | パッチ適用をスキップ |
-| `-skip-build` | clone / patch のみ（ビルドしない） |
-| `-optimize mode` | Zig の最適化（既定: `ReleaseFast`） |
+| `--force` | `_build/opentui` を消して再 clone してから patch / build |
+| `-skip-build` | clone / patch のみ |
+| `-optimize mode` | Zig 最適化（既定: `ReleaseFast`） |
 
-最初からやり直す:
+成果物例:
 
-```bash
-go run ./cmd/opentui-static --force
-```
+`_build/opentui/packages/core/src/zig/lib/aarch64-macos-static/libopentui.a`
 
-clone とパッチだけ:
+## Hello TUI（Solod + OpenTUI）
+
+画面に文言を出して 2 秒後に終了する最小アプリです。
 
 ```bash
-go run ./cmd/opentui-static -skip-build
+go install solod.dev/cmd/so@main
+go run ./cmd/hello-tui
+./examples/hello-tui/hello-tui
 ```
 
-### 成果物の場所
+`libopentui.a` が無ければ、内部で `go run ./cmd/opentui-static` も実行します。
 
-| プラットフォーム | パス |
-|------------------|------|
-| Apple Silicon macOS | `_build/opentui/packages/core/src/zig/lib/aarch64-macos-static/libopentui.a` |
-| Intel macOS | `_build/opentui/packages/core/src/zig/lib/x86_64-macos-static/libopentui.a` |
-| Linux arm64 | `_build/opentui/packages/core/src/zig/lib/aarch64-linux-static/libopentui.a` |
-| Linux x86_64 | `_build/opentui/packages/core/src/zig/lib/x86_64-linux-static/libopentui.a` |
+| フラグ | 意味 |
+|--------|------|
+| `-o path` | 出力バイナリ（既定: `examples/hello-tui/hello-tui`） |
+| `-run` | ビルド後に実行 |
+| `-skip-lib` | 静的ライブラリが無いときに自動ビルドしない |
 
-## 静的リンクのスモークテスト（C）
+構成:
+
+| パス | 役割 |
+|------|------|
+| `cmd/hello-tui/` | `go run` 用ビルドオーケストレータ |
+| `include/opentui.h` | MVP 用 C ABI 宣言 |
+| `soopentui/` | So からの薄いバインディング |
+| `examples/hello-tui/` | サンプルアプリ |
+
+ビルドは `so translate` → `zig cc` で静的リンクします（単一バイナリ、`libopentui.dylib` 依存なし）。
+
+## C スモーク
 
 ```bash
 go run ./cmd/opentui-static
 ./examples/smoke-static/build.sh
 ```
 
-ポイント:
-
-- 最終リンクは **`zig cc`** を使う（Apple `ld` は Zig が固めた archive 内の C++ オブジェクトを拒むことがある）
-- 成功すると `libopentui.dylib` への依存はなく、システム framework のみになる（macOS）
-
 ## 既知の注意（macOS + Zig 0.15.2）
 
-新しい Xcode / macOS SDK では、Zig 0.15.2 の build runner がリンクに失敗することがあります。  
-`go run ./cmd/opentui-static` は macOS 上で `DEVELOPER_DIR=/dev/null` を自動設定します。
+新しい Xcode / macOS SDK では Zig 0.15.2 の build runner が失敗することがあります。  
+`go run ./cmd/opentui-static` は `DEVELOPER_DIR=/dev/null` を自動設定します。
 
-この回避を無効化したい場合:
+無効化:
 
 ```bash
 OPENTUI_KEEP_DEVELOPER_DIR=1 go run ./cmd/opentui-static
 ```
 
-Homebrew のパッチ済み Zig 0.15.2 を使う方法もあります。
+また `so build` の `LDFLAGS` は `-o` の後に付くため、`zig cc` + framework リンクでは使えません。hello-tui は translate + 明示リンクにしています。
 
 ## ディレクトリ
 
 ```text
-cmd/opentui-static/     # clone → patch → build
+cmd/opentui-static/     # OpenTUI: clone → patch → build
+cmd/hello-tui/          # hello-tui: translate → link
 patches/                # OpenTUI 向けパッチ
-examples/smoke-static/  # 静的リンクの C スモーク
+include/opentui.h       # MVP C ヘッダ
+soopentui/              # So バインディング
+examples/hello-tui/     # 最小 TUI
+examples/smoke-static/  # C 静的リンクスモーク
 _build/                 # 作業ディレクトリ（gitignore）
-  opentui/              # 自動 clone
-solod/                  # 任意の参照用 clone（gitignore）
 ```
