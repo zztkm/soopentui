@@ -25,10 +25,33 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Set up Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.15.2
+      - name: Install Zig
+        env:
+          ZIG_VERSION: 0.15.2
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64) arch=x86_64 ;;
+            aarch64|arm64) arch=aarch64 ;;
+            *) echo "unsupported arch: $(uname -m)" >&2; exit 1 ;;
+          esac
+          tarball="zig-${arch}-linux-${ZIG_VERSION}.tar.xz"
+          url="https://ziglang.org/download/${ZIG_VERSION}/${tarball}"
+          curl -fsSL -o "$tarball" "$url"
+          # SHA256 from https://ziglang.org/download/index.json
+          case "$arch" in
+            x86_64)
+              expected="02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239"
+              ;;
+            aarch64)
+              expected="958ed7d1e00d0ea76590d27666efbf7a932281b3d7ba0c6b01b0ff26498f667f"
+              ;;
+          esac
+          echo "${expected}  ${tarball}" | sha256sum -c -
+          mkdir -p "$HOME/.local"
+          tar -xJf "$tarball" -C "$HOME/.local"
+          echo "$HOME/.local/zig-${arch}-linux-${ZIG_VERSION}" >> "$GITHUB_PATH"
+          "$HOME/.local/zig-${arch}-linux-${ZIG_VERSION}/zig" version
 
       - name: Install Solod (so)
         run: |
