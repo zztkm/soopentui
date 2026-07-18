@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build OpenTUI + example (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-26]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Zig
+        env:
+          ZIG_VERSION: 0.15.2
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64) arch=x86_64 ;;
+            aarch64|arm64) arch=aarch64 ;;
+            *) echo "unsupported arch: $(uname -m)" >&2; exit 1 ;;
+          esac
+          case "$(uname -s)" in
+            Linux) os=linux ;;
+            Darwin) os=macos ;;
+            *) echo "unsupported OS: $(uname -s)" >&2; exit 1 ;;
+          esac
+          tarball="zig-${arch}-${os}-${ZIG_VERSION}.tar.xz"
+          url="https://ziglang.org/download/${ZIG_VERSION}/${tarball}"
+          curl -fsSL -o "$tarball" "$url"
+          # SHA256 from https://ziglang.org/download/index.json
+          case "${arch}-${os}" in
+            x86_64-linux)
+              expected="02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239"
+              ;;
+            aarch64-linux)
+              expected="958ed7d1e00d0ea76590d27666efbf7a932281b3d7ba0c6b01b0ff26498f667f"
+              ;;
+            x86_64-macos)
+              expected="375b6909fc1495d16fc2c7db9538f707456bfc3373b14ee83fdd3e22b3d43f7f"
+              ;;
+            aarch64-macos)
+              expected="3cc2bab367e185cdfb27501c4b30b1b0653c28d9f73df8dc91488e66ece5fa6b"
+              ;;
+          esac
+          if command -v sha256sum >/dev/null; then
+            echo "${expected}  ${tarball}" | sha256sum -c -
+          else
+            echo "${expected}  ${tarball}" | shasum -a 256 -c -
+          fi
+          mkdir -p "$HOME/.local"
+          tar -xJf "$tarball" -C "$HOME/.local"
+          echo "$HOME/.local/zig-${arch}-${os}-${ZIG_VERSION}" >> "$GITHUB_PATH"
+          "$HOME/.local/zig-${arch}-${os}-${ZIG_VERSION}/zig" version
+
+      - name: Install Solod (so)
+        run: |
+          go install solod.dev/cmd/so@main
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          so version
+
+      - name: Build static OpenTUI (libopentui.a)
+        run: go run ./cmd/opentui-static
+
+      - name: Build hello-tui example
+        run: go run ./cmd/hello-tui
+
+      - name: Verify artifacts
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64) arch=x86_64 ;;
+            aarch64|arm64) arch=aarch64 ;;
+            *) echo "unsupported arch: $(uname -m)" >&2; exit 1 ;;
+          esac
+          case "$(uname -s)" in
+            Linux) os=linux ;;
+            Darwin) os=macos ;;
+            *) echo "unsupported OS: $(uname -s)" >&2; exit 1 ;;
+          esac
+          lib="_build/opentui/packages/core/src/zig/lib/${arch}-${os}-static/libopentui.a"
+          test -f "$lib"
+          test -f examples/hello-tui/hello-tui
+          ls -lh "$lib" examples/hello-tui/hello-tui
