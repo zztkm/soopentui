@@ -125,6 +125,12 @@ func Build(opts Options) error {
 		return fmt.Errorf("no generated .c files in %s", tmpDir)
 	}
 
+	stdinC := filepath.Join(includeDir, "soopentui_stdin.c")
+	if !fileExists(stdinC) {
+		return fmt.Errorf("soopentui_stdin.c not found: %s", stdinC)
+	}
+	cFiles = append(cFiles, stdinC)
+
 	fmt.Printf("linking %d C files + libopentui.a -> %s\n", len(cFiles), out)
 	if err := link(tmpDir, includeDir, libPath, cFiles, out); err != nil {
 		return err

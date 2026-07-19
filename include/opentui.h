@@ -52,6 +52,9 @@ void setCursorStyleOptions(OtuiHandle renderer, const OtuiCursorStyleOptions *op
 void enableMouse(OtuiHandle renderer, bool enable_movement);
 void disableMouse(OtuiHandle renderer);
 
+/* Feed a terminal capability reply (or other stdin chunk) to the renderer. */
+void processCapabilityResponse(OtuiHandle renderer, const char *response, uint32_t response_len);
+
 OtuiHandle getNextBuffer(OtuiHandle renderer);
 OtuiHandle getCurrentBuffer(OtuiHandle renderer);
 uint32_t getBufferWidth(OtuiHandle buffer);

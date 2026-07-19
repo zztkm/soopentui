@@ -94,6 +94,9 @@ func enableMouse(renderer Handle, enableMovement bool)
 func disableMouse(renderer Handle)
 
 //so:extern
+func processCapabilityResponse(renderer Handle, response string, responseLen uint32)
+
+//so:extern
 func getNextBuffer(renderer Handle) Handle
 
 //so:extern
@@ -195,6 +198,12 @@ func EnableMouse(renderer Handle, enableMovement bool) {
 // DisableMouse disables terminal mouse reporting.
 func DisableMouse(renderer Handle) {
 	disableMouse(renderer)
+}
+
+// ProcessCapabilityResponse feeds a stdin chunk to OpenTUI's capability parser.
+// Call this for replies to SetupTerminal queries (and optionally other chunks).
+func ProcessCapabilityResponse(renderer Handle, data string) {
+	processCapabilityResponse(renderer, data, uint32(len(data)))
 }
 
 // NextBuffer returns the buffer to draw into for the next frame.

@@ -66,11 +66,14 @@ go run ./cmd/build -o examples/hello-tui/hello-tui ./examples/hello-tui
 # または
 go run ./cmd/hello-tui
 ./examples/hello-tui/hello-tui
+
+# 入力付き（q / Ctrl+C で終了）
+go run ./cmd/quit-tui -run
 ```
 
-## 公開 API（描画・端末制御）
+## 公開 API（描画・端末制御・入力ホスト）
 
-薄い C ABI ラッパーです。キー／マウス入力のデコードやイベントループは含みません（stdin はアプリ側で読んでください）。`EnableMouse` は端末のマウス報告を有効化するだけです。
+薄い C ABI ラッパーです。本格的なキー／マウス入力のデコードは含みません（アプリ側で読んでください）。stdin の raw mode と capability 応答の drain だけホスト側ヘルパとして用意しています。`EnableMouse` は端末のマウス報告を有効化するだけです。
 
 | 関数 | 役割 |
 |------|------|
@@ -80,6 +83,9 @@ go run ./cmd/hello-tui
 | `Resize` | リサイズ |
 | `SetCursorPosition` / `SetCursorColor` / `SetCursorStyle` | カーソル |
 | `EnableMouse` / `DisableMouse` | マウス報告の ON/OFF |
+| `ProcessCapabilityResponse` | 端末 capability 応答を renderer に渡す |
+| `EnableRawStdin` / `RestoreStdin` / `PollStdin` / `ReadStdin` / `ReadStdinNonblock` | stdin raw mode / poll / read |
+| `DrainCapabilities` | 起動直後の capability 応答を吸い上げる |
 | `NextBuffer` / `CurrentBuffer` / `BufferWidth` / `BufferHeight` | バッファ |
 | `Clear` / `FillRect` / `DrawText` / `DrawTextAttr` | 描画 |
 | `Render` | 表示 |
@@ -105,7 +111,7 @@ OPENTUI_KEEP_DEVELOPER_DIR=1 go run ./cmd/opentui-static
 
 `so build` の `LDFLAGS` は `-o` の後に付くため、framework リンクでは使えません。`cmd/build` は translate + 明示リンクです。
 
-起動時に端末 capability 問い合わせの応答がシェルに漏れることがあります（stdin を読んでいないため）。表示自体は問題ありません。
+起動時に端末 capability 問い合わせの応答がシェルに漏れることがあります。対話アプリでは `SetupTerminal` の直後に `EnableRawStdin` と `DrainCapabilities` を呼んでください（`examples/quit-tui` 参照）。
 
 ## ライセンス
 
